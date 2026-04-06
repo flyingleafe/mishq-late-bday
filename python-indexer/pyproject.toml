@@ -1,0 +1,10 @@
+[project]
+name = "python-indexer"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "cocoindex>=0.3.37",
+    "google-genai>=1.70.0",
+]

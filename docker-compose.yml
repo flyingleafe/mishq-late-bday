@@ -1,0 +1,16 @@
+services:
+  pgvector:
+    image: pgvector/pgvector:pg17
+    container_name: sutta-pgvector
+    environment:
+      POSTGRES_USER: sutta
+      POSTGRES_PASSWORD: suttapass
+      POSTGRES_DB: suttas
+    ports:
+      - "5433:5432"
+    volumes:
+      - sutta_pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  sutta_pgdata:
