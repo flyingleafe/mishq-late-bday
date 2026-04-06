@@ -23,36 +23,44 @@ function getDb() {
   return db;
 }
 
-let systemMessageCache: string | null = null;
+type SystemQueryType = "birthday" | "how-it-works" | "other";
 
-function getSystemMessage(): string {
-  if (systemMessageCache === null) {
-    try {
-      const msgPath = join(process.cwd(), "MESSAGE.md");
-      systemMessageCache = readFileSync(msgPath, "utf-8");
-    } catch {
-      systemMessageCache = "Hello! This is a Buddhist sutta search engine. How can I help you today?";
-    }
+const systemMessages: Record<SystemQueryType, string> = {
+  birthday: "",
+  "how-it-works": "",
+  other: "",
+};
+
+function loadSystemMessages() {
+  try {
+    systemMessages.birthday = readFileSync(join(process.cwd(), "MESSAGE.md"), "utf-8");
+  } catch {
+    systemMessages.birthday = "Hello! This is a Buddhist sutta search engine. How can I help you today?";
   }
-  return systemMessageCache;
+  try {
+    systemMessages["how-it-works"] = readFileSync(join(process.cwd(), "HOW_IT_WORKS.md"), "utf-8");
+  } catch {
+    systemMessages["how-it-works"] = "I couldn't find the explanation document.";
+  }
+  systemMessages.other = systemMessages.birthday;
 }
 
-async function isSystemQuery(query: string): Promise<boolean> {
+loadSystemMessages();
+
+async function classifySystemQuery(query: string): Promise<SystemQueryType> {
   const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) return false;
+  if (!apiKey) return "birthday";
 
-  const prompt = `You are a classifier. Given a user query to a Buddhist sutta search engine, determine if the user is:
-1. Asking about the website/system itself (e.g. "what is this", "who made you", "how does this work")
-2. Expressing frustration or complaints about the search results (e.g. "this is garbage", "why are results so bad")
-3. Writing a meta-message to the developer (e.g. "happy birthday", "tell Alex I said hi")
-4. Or just greeting/short meta comments (e.g. "hi", "hello", "ok")
+  const prompt = `You are a classifier for a Buddhist sutta search engine. Given a user query, respond with exactly ONE word:
 
-If ANY of the above is true, respond with exactly: YES
-If the query is a genuine search for Buddhist sutta/dhamma content (even if poorly phrased), respond with exactly: NO
+- If the user is asking HOW the project works (e.g. "how does this work", "what is this", "how was this made", "what technology", "what model") → respond: HOW_IT_WORKS
+- If the user is writing a meta-message to the developer, a birthday greeting, or expressing frustration → respond: BIRTHDAY
+- If the user is greeting you or making small talk (e.g. "hi", "hello", "hey", "ok", "okay") → respond: BIRTHDAY
+- If the query is a genuine search for Buddhist/dhamma content (even if poorly phrased) → respond: NO
 
 User query: "${query}"
 
-Response:`;
+Response (one word only):`;
 
   try {
     const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -66,18 +74,20 @@ Response:`;
       body: JSON.stringify({
         model: LLM_MODEL,
         messages: [{ role: "user", content: prompt }],
-        max_tokens: 5,
+        max_tokens: 10,
         temperature: 0,
       }),
     });
 
-    if (!resp.ok) return false;
+    if (!resp.ok) return "birthday";
 
     const data = await resp.json() as { choices?: { message?: { content?: string } }[] };
-    const content = data.choices?.[0]?.message?.content?.trim().toUpperCase();
-    return content === "YES";
+    const content = data.choices?.[0]?.message?.content?.trim().toUpperCase() ?? "";
+
+    if (content.includes("HOW_IT_WORKS")) return "how-it-works";
+    return "birthday";
   } catch {
-    return false;
+    return "birthday";
   }
 }
 
@@ -402,12 +412,13 @@ app.get("/search", async (c) => {
     return c.json({ error: "q parameter is required" }, 400);
   }
 
-  if (await isSystemQuery(q)) {
+  const systemType = await classifySystemQuery(q);
+  if (systemType !== "birthday") {
     return c.json({
       query: q,
       top,
       is_system_message: true,
-      message: getSystemMessage(),
+      message: systemMessages[systemType],
       subqueries: [],
       timing_ms: 0,
       results: [],
@@ -459,7 +470,8 @@ app.get("/stream", async (c) => {
     return c.json({ error: "q parameter is required" }, 400);
   }
 
-  if (await isSystemQuery(q)) {
+  const systemType = await classifySystemQuery(q);
+  if (systemType !== "birthday") {
     c.header("Content-Type", "text/event-stream");
     c.header("Cache-Control", "no-cache");
     c.header("Connection", "keep-alive");
@@ -467,7 +479,7 @@ app.get("/stream", async (c) => {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       start(controller) {
-        controller.enqueue(encoder.encode(`event: system-message\ndata: ${JSON.stringify({ message: getSystemMessage() })}\n\n`));
+        controller.enqueue(encoder.encode(`event: system-message\ndata: ${JSON.stringify({ message: systemMessages[systemType] })}\n\n`));
         controller.close();
       },
     });
