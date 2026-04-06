@@ -1,4 +1,20 @@
 services:
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sutta-mcp-server
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3000
+      MCP_PATH: /mcp
+      DATABASE_URL: postgresql://sutta:suttapass@pgvector:5432/suttas
+    ports:
+      - "3000:3000"
+    depends_on:
+      - pgvector
+    restart: unless-stopped
+
   pgvector:
     image: pgvector/pgvector:pg17
     container_name: sutta-pgvector
