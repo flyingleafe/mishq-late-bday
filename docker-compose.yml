@@ -12,7 +12,8 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - pgvector
+      db-import:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   pgvector:
@@ -26,7 +27,32 @@ services:
       - "5433:5432"
     volumes:
       - sutta_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sutta -d suttas"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
     restart: unless-stopped
+
+  db-import:
+    image: pgvector/pgvector:pg17
+    container_name: sutta-db-import
+    depends_on:
+      pgvector:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: suttapass
+    volumes:
+      - ./suttas_dump.sql:/dump/suttas_dump.sql:ro
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        psql -h pgvector -U sutta -d suttas -v ON_ERROR_STOP=1 -c "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public; CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;"
+        psql -h pgvector -U sutta -d suttas -v ON_ERROR_STOP=1 -f /dump/suttas_dump.sql
+    restart: "no"
 
 volumes:
   sutta_pgdata:

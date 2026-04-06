@@ -105,7 +105,14 @@ Server starts on `http://localhost:8000`:
 | `/docs` | Scalar API docs |
 | `/health` | Health check |
 
----
+- a one-shot import job that reloads `suttas_dump.sql` into Postgres
+- MCP server at `http://127.0.0.1:3000/mcp`
+- Postgres with pgvector at `127.0.0.1:5433`
+
+On each `docker compose up`, the import job waits for Postgres, drops and recreates the `public` schema, and reimports [`suttas_dump.sql`](/Users/anton/Projects/mishq-late-bday/suttas_dump.sql) before the app starts. That keeps the containerized database aligned with the dump on every startup.
+
+The app container already receives:
+>>>>>>> Stashed changes
 
 ## Project Structure
 
