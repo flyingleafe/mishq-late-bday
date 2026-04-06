@@ -53,9 +53,8 @@ async function classifySystemQuery(query: string): Promise<SystemQueryType> {
 
   const prompt = `You are a classifier for a Buddhist sutta search engine. Given a user query, respond with exactly ONE word:
 
-- If the user is asking HOW the project works (e.g. "how does this work", "what is this", "how was this made", "what technology", "what model") → respond: HOW_IT_WORKS
-- If the user is writing a meta-message to the developer, a birthday greeting, or expressing frustration → respond: BIRTHDAY
-- If the user is greeting you or making small talk (e.g. "hi", "hello", "hey", "ok", "okay") → respond: BIRTHDAY
+- If the user asks how the system works, how it was made, what technology it uses, or anything similar (e.g. "how does this work", "how was this built", "what model do you use") → respond: HOW_IT_WORKS
+- If the user is curious about what the site is, or expresses confusion, or greets you, or writes a meta-message (e.g. "hi", "hello", "what is this", "who are you", "happy birthday", "what is this thing") → respond: BIRTHDAY
 - If the query is a genuine search for Buddhist/dhamma content (even if poorly phrased) → respond: NO
 
 User query: "${query}"
@@ -419,6 +418,7 @@ app.get("/search", async (c) => {
       top,
       is_system_message: true,
       message: systemMessages[systemType],
+      messageType: systemType,
       subqueries: [],
       timing_ms: 0,
       results: [],
@@ -479,7 +479,7 @@ app.get("/stream", async (c) => {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       start(controller) {
-        controller.enqueue(encoder.encode(`event: system-message\ndata: ${JSON.stringify({ message: systemMessages[systemType] })}\n\n`));
+        controller.enqueue(encoder.encode(`event: system-message\ndata: ${JSON.stringify({ message: systemMessages[systemType], messageType: systemType })}\n\n`));
         controller.close();
       },
     });
