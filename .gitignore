@@ -46,3 +46,6 @@ python-indexer/__pycache__/
 
 # built frontend assets
 public/
+
+# dump
+*.sql

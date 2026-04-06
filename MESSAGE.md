@@ -1,17 +1,24 @@
-# A message from the builder
-
-*Edit this file to replace the default message with your own words to Mishka.*
+# dear Mishq
 
 ---
 
-Hey Mishka,
+happy birthday!
 
-This is a little birthday project I made for you — a semantic search engine over Buddhist suttas, because I know you've been diving deeper into the dhamma lately.
+This is just a smol RAG project for you by your frens
 
-This isn't a perfect system. It's a rough prototype, thrown together in a few hours. The highlighting algorithm was especially stubborn to get right. But I hope you find something useful in here — maybe a passage you hadn't encountered before, or a new angle on something you thought you already knew.
+It's obviously fully vibecoded in like 5 hours total because we're unmedicated ADHD fuckwits without planning capability and lots of stress in our own life to manage... so we did not plan ahead, and the stuff does not work very properly at all tbh...
 
-The suttas are from the Pali Canon, pulled from SuttaCentral. The semantic search uses subquery expansion with Gemini Flash + sentence embeddings, so it tries to understand *what you're actually looking for* rather than just matching keywords.
+But hopefully this smol thing would amuse you from time to time;
 
-May this be of benefit.
+and dare we hope that at some point embeddings would select for you an actually meaningful answer for your trouble of the day --
 
-— Alex
+the probability is non-negligible, since there are many answers in Suttapiṭaka.
+
+P.S. you can use it as a claude code skill:
+
+```
+INSERT INSTRUCTIONS
+```
+
+sincerely yours,
+Dimq & Anton

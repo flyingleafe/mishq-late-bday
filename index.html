@@ -410,13 +410,14 @@
     function renderSystemMessage(message) {
       const formatted = message
         .replace(/^# (.+)$/gm, '<h1 class="sutta-title" style="text-align:center;font-size:2rem;margin-bottom:1rem;">$1</h1>')
+        .replace(/```([\s\S]*?)```/g, '<pre style="background:#f0ede8;padding:1rem;border-radius:4px;overflow-x:auto;margin:1.5rem 0;"><code>$1</code></pre>')
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.+?)\*/g, '<em>$1</em>')
         .replace(/^---$/gm, '<hr style="border:none;border-top:1px solid var(--border);margin:2rem 0;">')
         .replace(/\n\n/g, '</p><p style="margin-bottom:1rem;">')
         .replace(/\n/g, '<br>');
       const wrapped = `<p style="margin-bottom:1rem;">${formatted}</p>`;
-      resultArea.innerHTML = `<div class="sutta-section"><div class="sutta-text">${wrapped}</div></div>`;
+      resultArea.innerHTML = `<div class="sutta-section" style="text-align:center;"><div class="sutta-text" style="text-align:left;max-width:650px;margin:0 auto;">${wrapped}</div></div>`;
       resultArea.classList.add('visible');
       resultArea.scrollTo({ top: 0, behavior: 'smooth' });
     }
