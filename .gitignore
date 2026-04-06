@@ -37,6 +37,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # crawled data
 data-test/
 data/
+data.tar.gz
 
 # Python
 python-indexer/.venv/

@@ -33,7 +33,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 import cocoindex
 from cocoindex import LlmApiType, LlmSpec
 from cocoindex.functions import EmbedText, ExtractByLlm
-from cocoindex.index import VectorIndexDef, VectorSimilarityMetric
+
 from cocoindex.setting import Settings
 from cocoindex.sources import LocalFile
 from cocoindex.targets import Postgres
@@ -55,8 +55,9 @@ INTERPRET_MODEL = "gemini-2.5-flash"
 # Fast embedding model for vector search
 EMBED_MODEL = "gemini-embedding-001"
 
-# Output dimension — capped at 1536 so pgvector HNSW/IVFFlat (<= 2000) works
-EMBED_DIM = 1536
+# Full output dimension of gemini-embedding-001
+# (pgvector HNSW/IVFFlat are limited to 2000 dims; we use exact KNN instead)
+EMBED_DIM = 3072
 
 # Absolute path to the sutta texts directory
 _DATA_DIR = str(Path(__file__).resolve().parent.parent / "data" / "texts")
@@ -275,7 +276,6 @@ def sutta_wisdom_flow(flow: cocoindex.FlowBuilder, scope: cocoindex.DataScope) -
                 api_type=LlmApiType.GEMINI,
                 model=EMBED_MODEL,
                 task_type="RETRIEVAL_DOCUMENT",
-                output_dimension=EMBED_DIM,
                 expected_output_dimension=EMBED_DIM,
                 api_key=gemini_key_ref,
             )
@@ -293,17 +293,11 @@ def sutta_wisdom_flow(flow: cocoindex.FlowBuilder, scope: cocoindex.DataScope) -
             embedding=file["embedding"],
         )
 
-    # --- Export to Postgres with a cosine-similarity HNSW vector index ---
+    # --- Export to Postgres (exact KNN — no HNSW/IVFFlat, both cap at 2000 dims) ---
     collector.export(
         "suttas",
         Postgres(table_name="suttas"),
         primary_key_fields=["uid"],
-        vector_indexes=[
-            VectorIndexDef(
-                field_name="embedding",
-                metric=VectorSimilarityMetric.COSINE_SIMILARITY,
-            )
-        ],
     )
 
 
