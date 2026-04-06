@@ -7,7 +7,9 @@
     "dev": "bun run index.ts",
     "mcp": "bun run index.ts",
     "smoke": "bun run src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "query:server": "bun run src/query/server.ts",
+    "query:cli": "bun run src/query/cli.ts"
   },
   "devDependencies": {
     "@types/bun": "latest"
@@ -23,9 +25,5 @@
     "hono": "^4.12.11",
     "p-limit": "^7.3.0",
     "p-retry": "^8.0.0"
-  },
-  "scripts": {
-    "query:server": "bun run src/query/server.ts",
-    "query:cli": "bun run src/query/cli.ts"
   }
 }

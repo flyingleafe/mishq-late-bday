@@ -392,7 +392,7 @@ const OPENAPI_SPEC = {
 
 app.get("/openapi.json", (c) => c.json(OPENAPI_SPEC));
 
-app.use("/docs", Scalar({ spec: OPENAPI_SPEC }));
+app.use("/docs", Scalar({ url: "/openapi.json" }));
 
 app.get("/search", async (c) => {
   const q = c.req.query("q") || "";
