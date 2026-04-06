@@ -7,4 +7,8 @@ requires-python = ">=3.12"
 dependencies = [
     "cocoindex>=0.3.37",
     "google-genai>=1.70.0",
+    "sentence-transformers>=3.3.0",
+    "psycopg[binary]>=3.1",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
 ]

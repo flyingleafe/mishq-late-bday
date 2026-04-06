@@ -2,15 +2,20 @@
 CocoIndex pipeline – Sutta Wisdom Finder
 =========================================
 
-Reads all sutta JSON files from  ../data/texts/,  uses a Gemini thinking
-model to produce a "wisdom interpretation" (which life situations / human
-struggles does this teaching speak to?), then embeds that interpretation
-with gemini-embedding-001 and stores everything in PostgreSQL + pgvector.
+Reads all sutta JSON files from  ../data/texts/,  uses an LLM to produce a
+"wisdom interpretation" (which life situations / human struggles does this
+teaching speak to?), then embeds that interpretation with a local Ollama
+embedding model and stores everything in PostgreSQL + pgvector.
 
 Required environment variables (place in the repo-root  .env  file):
-    GEMINI_API_KEY            – your Google AI API key
+    OPENROUTER_API_KEY        – your OpenRouter API key (for LLM interpretation)
     COCOINDEX_DATABASE_URL    – postgres URL, e.g.
                                 postgresql://sutta:suttapass@localhost:5433/suttas
+
+Prerequisites:
+    Ollama running locally with nomic-embed-text:
+        ollama pull nomic-embed-text
+        ollama serve
 
 Run:
     cd python-indexer
@@ -31,8 +36,11 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 import cocoindex
-from cocoindex import LlmApiType, LlmSpec
-from cocoindex.functions import EmbedText, ExtractByLlm
+from cocoindex.typing import Vector
+from sentence_transformers import SentenceTransformer
+import numpy as np
+import typing
+import httpx
 
 from cocoindex.setting import Settings
 from cocoindex.sources import LocalFile
@@ -44,20 +52,19 @@ from cocoindex.targets import Postgres
 
 # Characters of sutta text sent to the interpretation LLM (some suttas are
 # 300 K chars; 12 K gives the LLM enough to grasp the full teaching cheaply)
-MAX_TEXT_CHARS = 12_000
+MAX_TEXT_CHARS = 8_000
 
 # Characters stored as a human-readable snippet in the DB
 SNIPPET_CHARS = 600
 
 # Cheap thinking model for semantic interpretation
-INTERPRET_MODEL = "gemini-2.5-flash"
+INTERPRET_MODEL = "google/gemini-2.5-flash"
 
-# Fast embedding model for vector search
-EMBED_MODEL = "gemini-embedding-001"
+# Sentence-transformers model for fast CPU embedding
+EMBED_MODEL = "all-MiniLM-L6-v2"
 
-# Full output dimension of gemini-embedding-001
-# (pgvector HNSW/IVFFlat are limited to 2000 dims; we use exact KNN instead)
-EMBED_DIM = 3072
+# Full output dimension of all-MiniLM-L6-v2
+EMBED_DIM = 384
 
 # Absolute path to the sutta texts directory
 _DATA_DIR = str(Path(__file__).resolve().parent.parent / "data" / "texts")
@@ -115,30 +122,17 @@ def cocoindex_settings() -> Settings:
 # ---------------------------------------------------------------------------
 
 _INSTRUCTION = """
-You are a compassionate Buddhist scholar helping modern people find the right
-sutta for their personal struggles and life situations.
+You are a compassionate Buddhist scholar helping modern seekers find the right sutta for their struggles.
 
-Given the text of a Buddhist sutta, produce a structured wisdom interpretation
-that will let someone find this sutta by searching with plain everyday language
-such as:
-  "I feel like my talents go unappreciated"
-  "I'm afraid of dying"
-  "I can't stop comparing myself to others"
-  "I keep chasing happiness but never find it"
-  "I lost someone I love and I can't cope"
+Given a Buddhist sutta, produce a structured interpretation:
+• life_situations – 5–10 first-person emotional situations (concrete, human, not academic)
+• themes – 3–6 core Buddhist themes
+• teaching_essence – 3–5 warm, jargon-free sentences capturing the heart of the teaching
+• search_document – 100–150 words from seeker's perspective about their life struggles and emotional pain
 
-Guidelines:
-• life_situations – list 5–10 specific first-person emotional situations or
-  life problems. Be concrete and human, not academic.
-• themes – list 3–6 core Buddhist themes covered.
-• teaching_essence – 3–5 warm, jargon-free sentences capturing the heart of
-  the teaching.
-• search_document – 200–350 words from the seeker's perspective, describing
-  which human experiences, inner struggles, painful emotions and existential
-  questions this sutta most speaks to.  Imagine guiding a distressed person
-  who has never heard of Buddhism.  Be evocative, concrete, and compassionate.
+Example searches: "I feel unappreciated", "afraid of dying", "can't stop comparing", "chasing happiness", "lost someone"
 
-Think carefully before answering.  Wisdom matters more than scholarship.
+Be concrete, evocative, and compassionate. Wisdom matters more than scholarship.
 """.strip()
 
 # ---------------------------------------------------------------------------
@@ -218,6 +212,113 @@ def format_embed_input(wisdom: SuttaWisdom) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Local embedding with sentence-transformers (avoids Ollama HTTP overhead)
+# ---------------------------------------------------------------------------
+
+_st_model: SentenceTransformer | None = None
+
+
+def _get_st_model() -> SentenceTransformer:
+    global _st_model
+    if _st_model is None:
+        _st_model = SentenceTransformer(EMBED_MODEL)
+    return _st_model
+
+
+# Type alias for 384-dim normalized float32 vectors (required by CocoIndex for pgvector)
+EmbedVector = Vector[np.float32, typing.Literal[384]]
+
+
+@cocoindex.op.function()
+def embed_text_st(text: str) -> EmbedVector | None:
+    if not text:
+        return None
+    model = _get_st_model()
+    embedding: np.ndarray = model.encode(text, normalize_embeddings=True)
+    return embedding
+
+
+# ---------------------------------------------------------------------------
+# OpenRouter LLM call with structured outputs (guarantees valid JSON)
+# ---------------------------------------------------------------------------
+
+_WISDOM_SCHEMA = {
+    "name": "wisdom",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "life_situations": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "5–10 first-person life situations this sutta speaks to",
+            },
+            "themes": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "3–6 core Buddhist themes",
+            },
+            "teaching_essence": {
+                "type": "string",
+                "description": "3–5 warm, jargon-free sentences capturing the heart of the teaching",
+            },
+            "search_document": {
+                "type": "string",
+                "description": "100–150 words from seeker's perspective about relevant life struggles",
+            },
+        },
+        "required": [
+            "life_situations",
+            "themes",
+            "teaching_essence",
+            "search_document",
+        ],
+        "additionalProperties": False,
+    },
+}
+
+
+@cocoindex.op.function()
+def extract_wisdom(text: str) -> SuttaWisdom | None:
+    if not text:
+        return None
+    api_key = os.environ["OPENROUTER_API_KEY"]
+    with httpx.Client(timeout=60.0) as client:
+        resp = client.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com/flyingleafe/mishq",
+                "X-Title": "SuttaWisdomIndex",
+            },
+            json={
+                "model": INTERPRET_MODEL,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": f"{_INSTRUCTION}\n\nSutta text:\n{text}",
+                    }
+                ],
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": _WISDOM_SCHEMA,
+                },
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"]
+        parsed = json.loads(content)
+        return SuttaWisdom(
+            life_situations=parsed["life_situations"],
+            themes=parsed["themes"],
+            teaching_essence=parsed["teaching_essence"],
+            search_document=parsed["search_document"],
+        )
+
+
+# ---------------------------------------------------------------------------
 # Flow definition
 # ---------------------------------------------------------------------------
 
@@ -228,19 +329,6 @@ def sutta_wisdom_flow(flow: cocoindex.FlowBuilder, scope: cocoindex.DataScope) -
     Full indexing pipeline:
       LocalFile(*.json) → parse → LLM wisdom → embed → Postgres + pgvector
     """
-    # Register the Gemini API key as a transient auth entry so it's available
-    # to both the LLM interpretation step and the embedding step.
-    gemini_api_key = os.environ["GEMINI_API_KEY"]
-    gemini_key_ref = cocoindex.add_transient_auth_entry(gemini_api_key)
-
-    # LLM spec: cheap thinking model for semantic interpretation
-    interpret_llm = LlmSpec(
-        api_type=LlmApiType.GEMINI,
-        model=INTERPRET_MODEL,
-        api_key=gemini_key_ref,
-    )
-
-    # --- Source ---
     files = flow.add_source(
         LocalFile(
             path=_DATA_DIR,
@@ -251,37 +339,17 @@ def sutta_wisdom_flow(flow: cocoindex.FlowBuilder, scope: cocoindex.DataScope) -
     collector = scope.add_collector()
 
     with files.row() as file:
-        # Extract individual fields from the JSON
         file["uid"] = file["content"].transform(parse_sutta_uid)
         file["title"] = file["content"].transform(parse_sutta_title)
         file["snippet"] = file["content"].transform(parse_sutta_snippet)
         file["text_for_llm"] = file["content"].transform(parse_sutta_text)
 
-        # --- LLM wisdom interpretation ---
-        # When text_for_llm is None, ExtractByLlm propagates None → row skipped
-        file["wisdom"] = file["text_for_llm"].transform(
-            ExtractByLlm(
-                llm_spec=interpret_llm,
-                output_type=SuttaWisdom,
-                instruction=_INSTRUCTION,
-            )
-        )
+        file["wisdom"] = file["text_for_llm"].transform(extract_wisdom)
 
-        # --- Combine wisdom fields into a single embeddable document ---
         file["embed_text"] = file["wisdom"].transform(format_embed_input)
 
-        # --- Vector embedding (RETRIEVAL_DOCUMENT task for asymmetric search) ---
-        file["embedding"] = file["embed_text"].transform(
-            EmbedText(
-                api_type=LlmApiType.GEMINI,
-                model=EMBED_MODEL,
-                task_type="RETRIEVAL_DOCUMENT",
-                expected_output_dimension=EMBED_DIM,
-                api_key=gemini_key_ref,
-            )
-        )
+        file["embedding"] = file["embed_text"].transform(embed_text_st)
 
-        # --- Collect output row ---
         collector.collect(
             uid=file["uid"],
             title=file["title"],
@@ -293,7 +361,6 @@ def sutta_wisdom_flow(flow: cocoindex.FlowBuilder, scope: cocoindex.DataScope) -
             embedding=file["embedding"],
         )
 
-    # --- Export to Postgres (exact KNN — no HNSW/IVFFlat, both cap at 2000 dims) ---
     collector.export(
         "suttas",
         Postgres(table_name="suttas"),

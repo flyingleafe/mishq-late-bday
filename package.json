@@ -16,8 +16,16 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@hono/node-server": "^1.19.12",
+    "@scalar/hono-api-reference": "^0.10.6",
+    "@xenova/transformers": "^2.17.2",
     "cheerio": "^1.2.0",
+    "hono": "^4.12.11",
     "p-limit": "^7.3.0",
     "p-retry": "^8.0.0"
+  },
+  "scripts": {
+    "query:server": "bun run src/query/server.ts",
+    "query:cli": "bun run src/query/cli.ts"
   }
 }

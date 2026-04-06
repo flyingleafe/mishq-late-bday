@@ -43,3 +43,6 @@ data.tar.gz
 python-indexer/.venv/
 python-indexer/__pycache__/
 **/__pycache__/
+
+# built frontend assets
+public/

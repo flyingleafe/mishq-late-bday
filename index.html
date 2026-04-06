@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sutta Search</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Crimson+Pro:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-color: #FAF8F5;
+      --surface-color: #F0EDE8;
+      --text-primary: #2C2C2C;
+      --text-muted: #8B8680;
+      --accent: #7A8B6E;
+      --accent-hover: #6A7A5E;
+      --border: #E8E4DE;
+      --highlight-bg: #EEF2EB;
+      
+      --font-heading: 'Cormorant Garamond', serif;
+      --font-body: 'Crimson Pro', serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      line-height: 1.8;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      transition: all 0.5s ease;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 800px;
+      padding: 2rem;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    .input-section {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      transition: all 0.5s ease;
+      margin-top: auto;
+      padding-bottom: 2rem;
+    }
+
+    .placeholder-text {
+      font-family: var(--font-heading);
+      color: var(--text-muted);
+      font-size: 1.5rem;
+      margin-bottom: 0.5rem;
+      opacity: 0.7;
+      transition: opacity 0.3s ease;
+    }
+
+    .container.active .placeholder-text {
+      display: none;
+    }
+
+    #search-form {
+      width: 100%;
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    #query-input {
+      width: 100%;
+      background: transparent;
+      border: none;
+      border-bottom: 1px solid var(--border);
+      font-family: var(--font-heading);
+      font-size: 2.5rem;
+      color: var(--text-primary);
+      text-align: center;
+      padding: 0.5rem 2rem;
+      outline: none;
+      transition: all 0.3s ease;
+    }
+
+    #query-input:focus {
+      border-bottom-color: var(--accent);
+    }
+
+    #query-input::placeholder {
+      color: transparent;
+    }
+
+    button[type="submit"] {
+      display: none; /* Hidden, submit via Enter */
+    }
+
+    .subqueries {
+      margin-top: 1rem;
+      font-family: var(--font-body);
+      font-style: italic;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-align: center;
+      min-height: 1.5rem;
+      opacity: 0;
+      transition: opacity 0.5s ease;
+    }
+
+    .subqueries.visible {
+      opacity: 1;
+    }
+
+    .progress {
+      margin-top: 0.5rem;
+      font-size: 0.85rem;
+      color: var(--accent);
+      text-align: center;
+      height: 1.5rem;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .progress.visible {
+      opacity: 1;
+    }
+
+    .result-area {
+      flex: 1;
+      width: 100%;
+      overflow-y: auto;
+      opacity: 0;
+      transform: translateY(20px);
+      transition: all 0.5s ease;
+      display: flex;
+      flex-direction: column;
+      padding-bottom: 2rem;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+
+    .result-area::-webkit-scrollbar {
+      width: 6px;
+    }
+    .result-area::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .result-area::-webkit-scrollbar-thumb {
+      background-color: var(--border);
+      border-radius: 10px;
+    }
+
+    .result-area.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .sutta-title {
+      font-family: var(--font-heading);
+      font-size: 2.5rem;
+      font-weight: 400;
+      margin-bottom: 0.5rem;
+      color: var(--text-primary);
+      text-align: center;
+    }
+
+    .sutta-meta {
+      text-align: center;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      margin-bottom: 3rem;
+      font-style: italic;
+    }
+
+    .sutta-text {
+      font-size: 1.125rem;
+      white-space: pre-wrap;
+      max-width: 650px;
+      margin: 0 auto;
+    }
+
+    mark {
+      background-color: var(--highlight-bg);
+      color: inherit;
+      padding: 0.2em 0;
+      border-radius: 2px;
+      transition: background-color 0.3s ease;
+    }
+
+    .loading-pulse {
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 0.6; }
+      50% { opacity: 1; }
+      100% { opacity: 0.6; }
+    }
+
+    .chunk-section {
+      padding: 2rem 0 1rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 2rem;
+    }
+
+    .chunk-label {
+      font-family: var(--font-body);
+      font-size: 0.75rem;
+      font-style: italic;
+      color: var(--accent);
+      text-transform: lowercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.75rem;
+    }
+
+    .chunk-text {
+      font-family: var(--font-body);
+      font-size: 1.25rem;
+      line-height: 1.8;
+      color: var(--text-primary);
+    }
+
+    .sutta-section {
+      padding-bottom: 4rem;
+    }
+
+    .sutta-divider {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .sutta-divider::before,
+    .sutta-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    .sutta-divider-label {
+      font-family: var(--font-body);
+      font-size: 0.75rem;
+      font-style: italic;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .sutta-title {
+      font-family: var(--font-heading);
+      font-size: 1.5rem;
+      font-weight: 400;
+      margin-bottom: 0.25rem;
+      color: var(--text-primary);
+      text-align: left;
+    }
+
+    .sutta-meta {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-style: italic;
+      margin-bottom: 2rem;
+      text-align: left;
+    }
+  </style>
+</head>
+<body>
+  <div class="container initial" id="main-container">
+    <header class="input-section">
+      <p class="placeholder-text">what's on your mind?</p>
+      <form id="search-form">
+        <input type="text" id="query-input" autocomplete="off" spellcheck="false" autofocus>
+        <button type="submit">search</button>
+      </form>
+      <div id="subqueries" class="subqueries"></div>
+      <div id="progress" class="progress"></div>
+    </header>
+    <div id="result-area" class="result-area">
+      <!-- filled dynamically -->
+    </div>
+  </div>
+
+  <script type="module">
+    import { highlightChunk } from '/js/highlight.js';
+
+    const form = document.getElementById('search-form');
+    const input = document.getElementById('query-input');
+    const container = document.getElementById('main-container');
+    const subqueriesEl = document.getElementById('subqueries');
+    const progressEl = document.getElementById('progress');
+    const resultArea = document.getElementById('result-area');
+
+    let currentEventSource = null;
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const query = input.value.trim();
+      if (!query) return;
+      startSearch(query);
+      return false;
+    });
+
+    function startSearch(query) {
+      if (currentEventSource) {
+        currentEventSource.close();
+      }
+
+      // Update UI state
+      container.classList.remove('initial');
+      container.classList.add('active');
+      
+      subqueriesEl.textContent = '';
+      subqueriesEl.classList.remove('visible');
+      
+      progressEl.textContent = 'contemplating...';
+      progressEl.classList.add('visible', 'loading-pulse');
+      
+      resultArea.classList.remove('visible');
+      resultArea.innerHTML = '';
+
+      const url = new URL('/stream', window.location.origin);
+      url.searchParams.set('q', query);
+      url.searchParams.set('top', '1');
+
+      currentEventSource = new EventSource(url.toString());
+
+      currentEventSource.addEventListener('system-message', (e) => {
+        const data = JSON.parse(e.data);
+        progressEl.classList.remove('loading-pulse');
+        progressEl.textContent = '';
+        progressEl.classList.remove('visible');
+        renderSystemMessage(data.message);
+        currentEventSource.close();
+        currentEventSource = null;
+      });
+
+      currentEventSource.addEventListener('subqueries', (e) => {
+        const data = JSON.parse(e.data);
+        if (data.subqueries && data.subqueries.length > 0) {
+          subqueriesEl.textContent = data.subqueries.join(', ');
+          subqueriesEl.classList.add('visible');
+        }
+      });
+
+      currentEventSource.addEventListener('progress', (e) => {
+        const data = JSON.parse(e.data);
+        progressEl.textContent = `exploring path ${data.subquery_index} of ${data.subquery_total}...`;
+      });
+
+      currentEventSource.addEventListener('done', (e) => {
+        const data = JSON.parse(e.data);
+        progressEl.classList.remove('loading-pulse');
+        progressEl.textContent = '';
+        progressEl.classList.remove('visible');
+        
+        renderResult(data.results[0]);
+        currentEventSource.close();
+        currentEventSource = null;
+      });
+
+      currentEventSource.addEventListener('error', (e) => {
+        console.error('SSE Error', e);
+        progressEl.classList.remove('loading-pulse');
+        progressEl.textContent = 'an error occurred during contemplation.';
+        currentEventSource.close();
+        currentEventSource = null;
+      });
+    }
+
+    function renderResult(result) {
+      if (!result) {
+        resultArea.innerHTML = '<div class="sutta-meta">No insights found for this query.</div>';
+        resultArea.classList.add('visible');
+        return;
+      }
+
+      const { sutta_uid, sutta_title, chunk, sutta_text } = result;
+      const chunkText = (chunk.chunk_text || '').trim();
+
+      resultArea.innerHTML = `
+        <div class="chunk-section">
+          <div class="chunk-label">matching passage</div>
+          <div class="chunk-text">${chunkText}</div>
+        </div>
+        <div class="sutta-section">
+          <div class="sutta-divider">
+            <span class="sutta-divider-label">full sutta</span>
+          </div>
+          <div class="sutta-title">${sutta_title || sutta_uid}</div>
+          <div class="sutta-meta">${sutta_uid}</div>
+          <div class="sutta-text">${highlightChunk(chunkText, sutta_text || '')}</div>
+        </div>
+      `;
+
+      resultArea.classList.add('visible');
+      resultArea.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function renderSystemMessage(message) {
+      const formatted = message
+        .replace(/^# (.+)$/gm, '<h1 class="sutta-title" style="text-align:center;font-size:2rem;margin-bottom:1rem;">$1</h1>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/^---$/gm, '<hr style="border:none;border-top:1px solid var(--border);margin:2rem 0;">')
+        .replace(/\n\n/g, '</p><p style="margin-bottom:1rem;">')
+        .replace(/\n/g, '<br>');
+      const wrapped = `<p style="margin-bottom:1rem;">${formatted}</p>`;
+      resultArea.innerHTML = `<div class="sutta-section"><div class="sutta-text">${wrapped}</div></div>`;
+      resultArea.classList.add('visible');
+      resultArea.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+
+  </script>
+</body>
+</html>
