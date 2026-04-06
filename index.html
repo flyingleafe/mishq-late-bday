@@ -234,6 +234,14 @@
       padding-bottom: 4rem;
     }
 
+    .builder-message .sutta-text {
+      text-align: center;
+    }
+
+    .builder-message .sutta-text p {
+      text-align: center;
+    }
+
     .sutta-divider {
       display: flex;
       align-items: center;
@@ -408,16 +416,24 @@
     }
 
     function renderSystemMessage(message) {
-      const formatted = message
-        .replace(/^# (.+)$/gm, '<h1 class="sutta-title" style="text-align:center;font-size:2rem;margin-bottom:1rem;">$1</h1>')
-        .replace(/```([\s\S]*?)```/g, '<pre style="background:#f0ede8;padding:1rem;border-radius:4px;overflow-x:auto;margin:1.5rem 0;"><code>$1</code></pre>')
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\*(.+?)\*/g, '<em>$1</em>')
-        .replace(/^---$/gm, '<hr style="border:none;border-top:1px solid var(--border);margin:2rem 0;">')
-        .replace(/\n\n/g, '</p><p style="margin-bottom:1rem;">')
-        .replace(/\n/g, '<br>');
-      const wrapped = `<p style="margin-bottom:1rem;">${formatted}</p>`;
-      resultArea.innerHTML = `<div class="sutta-section" style="text-align:center;"><div class="sutta-text" style="text-align:left;max-width:650px;margin:0 auto;">${wrapped}</div></div>`;
+      const blocks = message.split(/\n\n+/);
+      const html = blocks.map(block => {
+        if (block.startsWith('# ')) {
+          return `<h1 class="sutta-title" style="font-size:2rem;margin-bottom:1rem;">${block.slice(2)}</h1>`;
+        }
+        if (block.startsWith('```') && block.endsWith('```')) {
+          return `<pre style="background:#f0ede8;padding:1rem;border-radius:4px;overflow-x:auto;margin:1.5rem 0;"><code>${block.slice(3, -3)}</code></pre>`;
+        }
+        if (block.trim() === '---') {
+          return `<hr style="border:none;border-top:1px solid var(--border);margin:2rem 0;">`;
+        }
+        const inner = block
+          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+          .replace(/\*(.+?)\*/g, '<em>$1</em>')
+          .replace(/\n/g, '<br>');
+        return `<p style="margin-bottom:1rem;">${inner}</p>`;
+      }).join('');
+      resultArea.innerHTML = `<div class="sutta-section builder-message"><div class="sutta-text">${html}</div></div>`;
       resultArea.classList.add('visible');
       resultArea.scrollTo({ top: 0, behavior: 'smooth' });
     }
