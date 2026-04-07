@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { createSuttaRetriever } from "../retriever/index.ts";
+import { searchSuttas } from "../query/server.ts";
 
 type JsonRpcId = string | number | null;
 
@@ -55,7 +55,6 @@ const GET_SUTTA_TOOL = {
   },
 } as const;
 
-const retriever = createSuttaRetriever();
 const sessions = new Map<string, Session>();
 
 export function startMcpServer() {
@@ -234,17 +233,33 @@ async function callTool(params: unknown) {
     throw new Error(`Unknown tool: ${parsed.name}`);
   }
 
-  const sutta = await retriever.retrieve(parsed.arguments.user_query);
+  const search = await searchSuttas(parsed.arguments.user_query, 3);
+
+  if (search.is_system_message) {
+    return {
+      content: [
+        {
+          type: "text",
+          text: search.message ?? "No sutta results were returned.",
+        },
+      ],
+      structuredContent: search,
+    };
+  }
+
+  const guidance =
+    "I found the top-3 most matching suttas. It is up to you which one to pick as the best answer to the user query.";
 
   return {
     content: [
       {
         type: "text",
-        text: JSON.stringify(sutta, null, 2),
+        text: `${guidance}\n\n${JSON.stringify(search, null, 2)}`,
       },
     ],
     structuredContent: {
-      sutta,
+      message: guidance,
+      ...search,
     },
   };
 }
@@ -412,6 +427,75 @@ function renderPlaygroundHtml(mcpPath: string): string {
       .hero {
         margin-bottom: 24px;
       }
+      .install-card {
+        position: relative;
+        overflow: hidden;
+        margin-bottom: 18px;
+        background:
+          radial-gradient(circle at top right, rgba(254, 215, 170, 0.95), transparent 34%),
+          linear-gradient(135deg, #fff8ef 0%, #fff1df 50%, #f7e7ca 100%);
+      }
+      .install-card::after {
+        content: "";
+        position: absolute;
+        inset: auto -80px -80px auto;
+        width: 220px;
+        height: 220px;
+        border-radius: 999px;
+        background: rgba(154, 52, 18, 0.08);
+        filter: blur(2px);
+        pointer-events: none;
+      }
+      .install-top {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        background: rgba(154, 52, 18, 0.09);
+        color: var(--accent);
+        font-size: 0.78rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .install-copy {
+        max-width: 560px;
+      }
+      .install-copy p {
+        margin: 0;
+        color: var(--muted);
+      }
+      .install-shell {
+        position: relative;
+        z-index: 1;
+        margin-top: 16px;
+        padding: 14px 16px;
+        border-radius: 16px;
+        border: 1px solid rgba(154, 52, 18, 0.16);
+        background: rgba(45, 36, 24, 0.96);
+        color: #fef3c7;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+      }
+      .install-shell pre {
+        color: inherit;
+      }
+      .install-note {
+        position: relative;
+        z-index: 1;
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
       h1 {
         margin: 0 0 8px;
         font-size: clamp(2rem, 5vw, 3.5rem);
@@ -524,6 +608,10 @@ function renderPlaygroundHtml(mcpPath: string): string {
         color: var(--muted);
         font-size: 0.92rem;
       }
+      .tiny {
+        font-size: 0.84rem;
+        color: var(--muted);
+      }
       code {
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       }
@@ -535,6 +623,25 @@ function renderPlaygroundHtml(mcpPath: string): string {
         <h1>Sutta MCP Playground</h1>
         <p class="sub">Browser-friendly MCP testing for <code>${mcpPath}</code>. Initialize a session, inspect tools, and call <code>get-sutta-tool</code> without hand-writing JSON-RPC requests.</p>
       </div>
+      <section class="card install-card">
+        <div class="install-top">
+          <div class="install-copy">
+            <div class="eyebrow">Claude Code</div>
+            <h2>Enable This MCP In One Click</h2>
+            <p>Use the primary button to copy the exact Claude Code install command for this running server. If you prefer project-scoped config, download a ready-made <code>.mcp.json</code> instead.</p>
+          </div>
+          <div class="actions">
+            <button id="claudeInstallBtn" type="button">Enable In Claude Code</button>
+            <button id="downloadConfigBtn" type="button" class="ghost">Download .mcp.json</button>
+          </div>
+        </div>
+        <div class="install-shell">
+          <pre id="claudeCommand"></pre>
+        </div>
+        <div class="install-note">
+          This repo also includes <code>/.mcp.json</code>, plus a local plugin marketplace at <code>/.agents/plugins/marketplace.json</code> and <code>/plugins/sutta-mcp</code>.
+        </div>
+      </section>
       <div class="grid">
         <section class="card">
           <h2>Session</h2>
@@ -549,9 +656,9 @@ function renderPlaygroundHtml(mcpPath: string): string {
             </div>
           </div>
           <div class="actions">
-            <button id="initBtn">Initialize</button>
-            <button id="listBtn" class="secondary">List Tools</button>
-            <button id="resetBtn" class="ghost">Reset Session</button>
+            <button id="initBtn" type="button">Initialize</button>
+            <button id="listBtn" type="button" class="secondary">List Tools</button>
+            <button id="resetBtn" type="button" class="ghost">Reset Session</button>
           </div>
           <p class="hint">Use <code>/healthz</code> for a plain browser health check. Use this page for actual MCP calls.</p>
         </section>
@@ -560,7 +667,7 @@ function renderPlaygroundHtml(mcpPath: string): string {
           <label for="query">user_query</label>
           <textarea id="query">How should I approach heartbreak?</textarea>
           <div class="actions">
-            <button id="callBtn">Call get-sutta-tool</button>
+            <button id="callBtn" type="button">Call get-sutta-tool</button>
           </div>
         </section>
         <section class="card">
@@ -581,8 +688,26 @@ function renderPlaygroundHtml(mcpPath: string): string {
       const statusEl = document.getElementById("status");
       const responseEl = document.getElementById("response");
       const queryEl = document.getElementById("query");
+      const claudeCommandEl = document.getElementById("claudeCommand");
+      const claudeInstallBtn = document.getElementById("claudeInstallBtn");
+      const downloadConfigBtn = document.getElementById("downloadConfigBtn");
+      const initBtn = document.getElementById("initBtn");
+      const listBtn = document.getElementById("listBtn");
+      const callBtn = document.getElementById("callBtn");
+      const resetBtn = document.getElementById("resetBtn");
 
       endpointEl.textContent = endpointUrl;
+      const claudeInstallCommand =
+        "claude mcp add --transport http sutta-mcp " + JSON.stringify(endpointUrl);
+      const claudeConfig = {
+        mcpServers: {
+          "sutta-mcp": {
+            type: "http",
+            url: endpointUrl
+          }
+        }
+      };
+      claudeCommandEl.textContent = claudeInstallCommand;
 
       function setStatus(text, isError = false) {
         statusEl.textContent = text;
@@ -592,6 +717,38 @@ function renderPlaygroundHtml(mcpPath: string): string {
       function setResponse(data) {
         responseEl.textContent =
           typeof data === "string" ? data : JSON.stringify(data, null, 2);
+      }
+
+      async function copyText(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+          return true;
+        }
+
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        textarea.style.pointerEvents = "none";
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+
+        try {
+          return document.execCommand("copy");
+        } finally {
+          document.body.removeChild(textarea);
+        }
+      }
+
+      function pulseButton(button, label) {
+        if (!(button instanceof HTMLButtonElement)) return;
+        const original = button.textContent;
+        button.textContent = label;
+        window.setTimeout(() => {
+          button.textContent = original;
+        }, 1600);
       }
 
       function updateSession(newSessionId) {
@@ -633,7 +790,7 @@ function renderPlaygroundHtml(mcpPath: string): string {
         return payload;
       }
 
-      document.getElementById("initBtn").addEventListener("click", async () => {
+      initBtn.addEventListener("click", async () => {
         setStatus("Initializing session...");
         try {
           const payload = await sendRpc("initialize", {
@@ -651,7 +808,7 @@ function renderPlaygroundHtml(mcpPath: string): string {
         }
       });
 
-      document.getElementById("listBtn").addEventListener("click", async () => {
+      listBtn.addEventListener("click", async () => {
         setStatus("Listing tools...");
         try {
           const payload = await sendRpc("tools/list");
@@ -662,7 +819,7 @@ function renderPlaygroundHtml(mcpPath: string): string {
         }
       });
 
-      document.getElementById("callBtn").addEventListener("click", async () => {
+      callBtn.addEventListener("click", async () => {
         setStatus("Calling get-sutta-tool...");
         try {
           const payload = await sendRpc("tools/call", {
@@ -678,7 +835,40 @@ function renderPlaygroundHtml(mcpPath: string): string {
         }
       });
 
-      document.getElementById("resetBtn").addEventListener("click", async () => {
+      claudeInstallBtn.addEventListener("click", async () => {
+        setResponse({
+          claude_code_command: claudeInstallCommand,
+          next_step: "Paste this into your terminal, then run /mcp in Claude Code."
+        });
+        try {
+          const copied = await copyText(claudeInstallCommand);
+          if (!copied) {
+            throw new Error("Copy command was not accepted by the browser.");
+          }
+          setStatus("Claude Code install command copied.");
+          pulseButton(claudeInstallBtn, "Copied");
+        } catch (error) {
+          claudeCommandEl.textContent = claudeInstallCommand;
+          pulseButton(claudeInstallBtn, "Copy Manually");
+          setStatus("Clipboard access failed. Copy the command shown on the page.", true);
+        }
+      });
+
+      downloadConfigBtn.addEventListener("click", () => {
+        const blob = new Blob([JSON.stringify(claudeConfig, null, 2)], {
+          type: "application/json"
+        });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "sutta-mcp.mcp.json";
+        link.click();
+        URL.revokeObjectURL(url);
+        setResponse(claudeConfig);
+        setStatus("Downloaded Claude Code .mcp.json config.");
+      });
+
+      resetBtn.addEventListener("click", async () => {
         if (!sessionId) {
           setStatus("No session to reset.");
           return;

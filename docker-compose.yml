@@ -9,6 +9,9 @@ services:
       PORT: 3000
       MCP_PATH: /mcp
       DATABASE_URL: postgresql://sutta:suttapass@pgvector:5432/suttas
+      COCOINDEX_DATABASE_URL: postgresql://sutta:suttapass@pgvector:5432/suttas
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      EMBED_MODEL: ${EMBED_MODEL:-Xenova/all-MiniLM-L6-v2}
     ports:
       - "3000:3000"
     depends_on:

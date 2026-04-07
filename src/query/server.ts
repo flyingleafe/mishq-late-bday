@@ -1,13 +1,12 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { serve } from "@hono/node-server";
 import { Scalar } from "@scalar/hono-api-reference";
 import { SQL } from "bun";
 import { pipeline } from "@xenova/transformers";
 import { readFileSync } from "fs";
 import { join } from "path";
 
-const DB_URL = process.env.COCOINDEX_DATABASE_URL!;
+const DB_URL = process.env.COCOINDEX_DATABASE_URL ?? process.env.DATABASE_URL;
 const DATA_DIR = join(process.cwd(), "data", "texts");
 const MODEL_NAME = process.env.EMBED_MODEL || "Xenova/all-MiniLM-L6-v2";
 const LLM_MODEL = "google/gemini-2.5-flash";
@@ -17,6 +16,9 @@ const CANDIDATES_PER_SUBQUERY = 30;
 let db: SQL;
 
 function getDb() {
+  if (!DB_URL) {
+    throw new Error("COCOINDEX_DATABASE_URL or DATABASE_URL must be set");
+  }
   if (!db) {
     db = new SQL(DB_URL);
   }
@@ -201,7 +203,7 @@ async function getSuttaText(uid: string): Promise<string> {
   }
 }
 
-interface ScoredChunk {
+export interface ScoredChunk {
   chunk_uid: string;
   sutta_uid: string;
   sutta_title: string;
@@ -210,7 +212,28 @@ interface ScoredChunk {
   avgDistance: number;
 }
 
-async function* streamSearchResults(
+export interface SearchResult {
+  sutta_uid: string;
+  sutta_title: string;
+  chunk: {
+    chunk_uid: string;
+    chunk_text: string;
+    score: number;
+  };
+  sutta_text: string;
+}
+
+export interface SearchResponse {
+  query: string;
+  top: number;
+  subqueries: string[];
+  timing_ms: number;
+  results: SearchResult[];
+  is_system_message?: boolean;
+  message?: string;
+}
+
+export async function* streamSearchResults(
   query: string,
   topK: number
 ): AsyncGenerator<{ type: "subqueries"; data: string[] } | { type: "subquery-progress"; data: { subquery: string; index: number; total: number; chunks: ScoredChunk[] } } | { type: "done"; data: { total_ms: number } }> {
@@ -281,6 +304,71 @@ async function* streamSearchResults(
   }
 
   yield { type: "done", data: { total_ms: Date.now() - t0 } };
+}
+
+export async function searchSuttas(
+  query: string,
+  top: number,
+): Promise<SearchResponse> {
+  const normalizedQuery = query.trim();
+  const normalizedTop = Math.min(50, Math.max(1, Math.trunc(top)));
+
+  if (!normalizedQuery) {
+    throw new Error("Query must be a non-empty string.");
+  }
+
+  if (await isSystemQuery(normalizedQuery)) {
+    return {
+      query: normalizedQuery,
+      top: normalizedTop,
+      is_system_message: true,
+      message: getSystemMessage(),
+      subqueries: [],
+      timing_ms: 0,
+      results: [],
+    };
+  }
+
+  const t0 = Date.now();
+  const chunks: ScoredChunk[] = [];
+  const subqueries: string[] = [];
+
+  for await (const event of streamSearchResults(normalizedQuery, normalizedTop)) {
+    if (event.type === "subqueries") {
+      subqueries.push(...event.data);
+    } else if (event.type === "subquery-progress") {
+      chunks.length = 0;
+      chunks.push(...event.data.chunks);
+    }
+  }
+
+  const results: SearchResult[] = [];
+  const seen = new Set<string>();
+
+  for (const chunk of chunks) {
+    if (seen.has(chunk.sutta_uid)) continue;
+    seen.add(chunk.sutta_uid);
+    const sutta_text = await getSuttaText(chunk.sutta_uid);
+    results.push({
+      sutta_uid: chunk.sutta_uid,
+      sutta_title: chunk.sutta_title,
+      chunk: {
+        chunk_uid: chunk.chunk_uid,
+        chunk_text: chunk.chunk_text,
+        score: chunk.score,
+      },
+      sutta_text,
+    });
+    if (results.length >= normalizedTop) break;
+  }
+
+  return {
+    query: normalizedQuery,
+    top: normalizedTop,
+    results,
+    subqueries,
+    timing_ms: Date.now() - t0,
+  };
 }
 
 const app = new Hono();
@@ -402,49 +490,8 @@ app.get("/search", async (c) => {
     return c.json({ error: "q parameter is required" }, 400);
   }
 
-  if (await isSystemQuery(q)) {
-    return c.json({
-      query: q,
-      top,
-      is_system_message: true,
-      message: getSystemMessage(),
-      subqueries: [],
-      timing_ms: 0,
-      results: [],
-    });
-  }
-
   try {
-    const t0 = Date.now();
-    const chunks: ScoredChunk[] = [];
-    const subqueries: string[] = [];
-
-    for await (const event of streamSearchResults(q, top)) {
-      if (event.type === "subqueries") {
-        subqueries.push(...event.data);
-      } else if (event.type === "subquery-progress") {
-        chunks.length = 0;
-        chunks.push(...event.data.chunks);
-      }
-    }
-
-    const results: any[] = [];
-    const seen = new Set<string>();
-
-    for (const chunk of chunks) {
-      if (seen.has(chunk.sutta_uid)) continue;
-      seen.add(chunk.sutta_uid);
-      const sutta_text = await getSuttaText(chunk.sutta_uid);
-      results.push({
-        sutta_uid: chunk.sutta_uid,
-        sutta_title: chunk.sutta_title,
-        chunk: { chunk_uid: chunk.chunk_uid, chunk_text: chunk.chunk_text, score: chunk.score },
-        sutta_text,
-      });
-      if (results.length >= top) break;
-    }
-
-    return c.json({ query: q, top, results, subqueries, timing_ms: Date.now() - t0 });
+    return c.json(await searchSuttas(q, top));
   } catch (err: any) {
     console.error("Search error:", err);
     return c.json({ error: err.message }, 500);
@@ -569,7 +616,7 @@ const PORT = parseInt(process.env.PORT || "8000", 10);
 console.log(`Starting Sutta Query Server on port ${PORT}...`);
 console.log(`Embed model: ${MODEL_NAME}`);
 console.log(`LLM model: ${LLM_MODEL}`);
-console.log(`DB: ${DB_URL}`);
+console.log(`DB: ${DB_URL ?? "<unset>"}`);
 
 export default {
   port: PORT,

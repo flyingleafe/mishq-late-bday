@@ -1,0 +1,20 @@
+{
+  "name": "mishq-local-marketplace",
+  "interface": {
+    "displayName": "Mishq Local Marketplace"
+  },
+  "plugins": [
+    {
+      "name": "sutta-mcp",
+      "source": {
+        "source": "local",
+        "path": "./plugins/sutta-mcp"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

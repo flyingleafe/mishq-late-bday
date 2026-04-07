@@ -6,6 +6,9 @@ COPY package.json bun.lock tsconfig.json ./
 RUN bun install --frozen-lockfile
 
 COPY index.ts ./
+COPY MESSAGE.md ./
+COPY index.html ./
+COPY data ./data
 COPY src ./src
 
 ENV NODE_ENV=production

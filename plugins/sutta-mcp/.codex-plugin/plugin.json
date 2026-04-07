@@ -1,0 +1,36 @@
+{
+  "name": "sutta-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for finding the top matching Buddhist suttas for a user query.",
+  "author": {
+    "name": "Dimq & Anton",
+    "email": "",
+    "url": "https://github.com/flyingleafe/mishq-late-bday"
+  },
+  "homepage": "http://127.0.0.1:3000/playground",
+  "repository": "https://github.com/flyingleafe/mishq-late-bday",
+  "license": "UNLICENSED",
+  "keywords": [
+    "mcp",
+    "sutta"
+  ],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Sutta MCP",
+    "shortDescription": "Find the top-3 matching Buddhist suttas for a question.",
+    "longDescription": "A local MCP tool backed by vector search over Buddhist suttas. It returns the top-3 matching suttas so the caller can choose the best answer.",
+    "developerName": "Dimq & Anton",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read"
+    ],
+    "websiteURL": "http://127.0.0.1:3000/playground",
+    "defaultPrompt": [
+      "Find three suttas about heartbreak.",
+      "Find suttas about grief and letting go.",
+      "Find the best sutta for anxiety."
+    ],
+    "brandColor": "#9a3412"
+  }
+}
