@@ -6,6 +6,7 @@ import { SQL } from "bun";
 import { pipeline } from "@xenova/transformers";
 import { readFileSync } from "fs";
 import { join } from "path";
+import { marked } from "marked";
 
 const DB_URL = process.env.COCOINDEX_DATABASE_URL!;
 const DATA_DIR = join(process.cwd(), "data", "texts");
@@ -33,14 +34,16 @@ const systemMessages: Record<SystemQueryType, string> = {
 
 function loadSystemMessages() {
   try {
-    systemMessages.birthday = readFileSync(join(process.cwd(), "MESSAGE.md"), "utf-8");
+    const raw = readFileSync(join(process.cwd(), "MESSAGE.md"), "utf-8");
+    systemMessages.birthday = marked.parse(raw) as string;
   } catch {
-    systemMessages.birthday = "Hello! This is a Buddhist sutta search engine. How can I help you today?";
+    systemMessages.birthday = "<p>Hello! This is a Buddhist sutta search engine. How can I help you today?</p>";
   }
   try {
-    systemMessages["how-it-works"] = readFileSync(join(process.cwd(), "HOW_IT_WORKS.md"), "utf-8");
+    const raw = readFileSync(join(process.cwd(), "HOW_IT_WORKS.md"), "utf-8");
+    systemMessages["how-it-works"] = marked.parse(raw) as string;
   } catch {
-    systemMessages["how-it-works"] = "I couldn't find the explanation document.";
+    systemMessages["how-it-works"] = "<p>I couldn't find the explanation document.</p>";
   }
   systemMessages.other = systemMessages.birthday;
 }
@@ -54,7 +57,7 @@ async function classifySystemQuery(query: string): Promise<SystemQueryType> {
   const prompt = `You are a classifier for a Buddhist sutta search engine. Given a user query, respond with exactly ONE word:
 
 - If the user asks how the system works, how it was made, what technology it uses, or anything similar (e.g. "how does this work", "how was this built", "what model do you use") → respond: HOW_IT_WORKS
-- If the user is curious about what the site is, or expresses confusion, or greets you, or writes a meta-message (e.g. "hi", "hello", "what is this", "who are you", "happy birthday", "what is this thing") → respond: BIRTHDAY
+- If the user is curious about what the site is, or expresses confusion, or greets you, or writes a meta-message (e.g. "hi", "hello", "what is this", "who are you", "happy birthday", "what is this", "what is this thing") → respond: BIRTHDAY
 - If the query is a genuine search for Buddhist/dhamma content (even if poorly phrased) → respond: NO
 
 User query: "${query}"

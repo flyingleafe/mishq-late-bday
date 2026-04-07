@@ -10,15 +10,17 @@ It's obviously fully vibecoded in like 5 hours total because we're unmedicated A
 
 But hopefully this smol thing would amuse you from time to time;
 
-and dare we hope that at some point embeddings would select for you an actually meaningful answer for your trouble of the day --
+and dare we hope that at some point embeddings would select for you an
+actually meaningful answer for your trouble of the day —
 
 the probability is non-negligible, since there are many answers in Suttapiṭaka.
 
 P.S. you can use it as a claude code skill:
 
-```
-INSERT INSTRUCTIONS
+```INSERT INSTRUCTIONS
 ```
 
 sincerely yours,
 Dimq & Anton
+
+P.S. This message is the only sequence of characters in this project typed by hand.
