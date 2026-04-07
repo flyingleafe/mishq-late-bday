@@ -6,6 +6,22 @@ import { pipeline } from "@xenova/transformers";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { marked } from "marked";
+import {
+  sessions,
+  MCP_SESSION_HEADER,
+  GET_SUTTA_TOOL,
+  MCP_PROTOCOL_VERSION,
+  SERVER_INFO,
+  createSession,
+  requireSession,
+  callTool,
+  success,
+  failure,
+  jsonRpcError,
+  validateOrigin,
+  renderPlaygroundHtml,
+  type JsonRpcRequest,
+} from "../mcp/server.ts";
 
 const DB_URL = process.env.COCOINDEX_DATABASE_URL ?? process.env.DATABASE_URL;
 const DATA_DIR = join(process.cwd(), "data", "texts");
@@ -330,12 +346,14 @@ export async function searchSuttas(
     throw new Error("Query must be a non-empty string.");
   }
 
-  if (await isSystemQuery(normalizedQuery)) {
+  const systemType = await classifySystemQuery(normalizedQuery);
+  if (systemType !== "birthday") {
     return {
       query: normalizedQuery,
       top: normalizedTop,
       is_system_message: true,
-      message: getSystemMessage(),
+      message: systemMessages[systemType],
+      messageType: systemType,
       subqueries: [],
       timing_ms: 0,
       results: [],
@@ -407,6 +425,121 @@ app.get("/js/:file", (c) => {
 });
 
 app.get("/health", (c) => c.json({ status: "ok" }));
+
+// MCP protocol routes
+const MCP_PATH = "/mcp";
+
+app.get("/healthz", (c) =>
+  c.json({ ok: true, service: SERVER_INFO.name }),
+);
+
+app.get("/playground", (c) =>
+  c.html(renderPlaygroundHtml(MCP_PATH)),
+);
+
+app.get(MCP_PATH, (c) =>
+  c.text("SSE is not enabled on this MCP server.", 405),
+);
+
+app.post(MCP_PATH, async (c) => {
+  const originError = validateOrigin(c.req.raw);
+  if (originError) {
+    return jsonRpcError(null, -32000, originError, 403);
+  }
+
+  const accept = c.req.header("accept") ?? "";
+  if (!accept.includes("application/json") || !accept.includes("text/event-stream")) {
+    return jsonRpcError(null, -32000, "Accept header must include application/json and text/event-stream.", 406);
+  }
+
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return jsonRpcError(null, -32700, "Invalid JSON body.", 400);
+  }
+
+  if (Array.isArray(body)) {
+    return jsonRpcError(null, -32600, "Batch requests are not supported by this server.", 406);
+  }
+
+  if (!body || typeof body !== "object") {
+    return jsonRpcError(null, -32600, "JSON-RPC body must be an object.", 400);
+  }
+
+  const message = body as JsonRpcRequest;
+
+  if (!("id" in message)) {
+    return c.text("", 202);
+  }
+
+  try {
+    switch (message.method) {
+      case "initialize":
+        return new Response(
+          JSON.stringify(success(message.id ?? null, {
+            protocolVersion: MCP_PROTOCOL_VERSION,
+            capabilities: { tools: {} },
+            serverInfo: SERVER_INFO,
+          })),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+              [MCP_SESSION_HEADER]: createSession().id,
+            },
+          },
+        );
+      case "ping":
+        requireSession(c.req.raw);
+        return new Response(
+          JSON.stringify(success(message.id ?? null, {})),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      case "tools/list":
+        requireSession(c.req.raw);
+        return new Response(
+          JSON.stringify(success(message.id ?? null, { tools: [GET_SUTTA_TOOL] })),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      case "tools/call":
+        requireSession(c.req.raw);
+        return new Response(
+          JSON.stringify(success(message.id ?? null, await callTool(message.params))),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      default:
+        requireSession(c.req.raw);
+        return new Response(
+          JSON.stringify(failure(message.id ?? null, -32601, `Method not found: ${message.method}`)),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown server error";
+    const status = errorMessage.startsWith("Missing or invalid session")
+      ? 400
+      : errorMessage.startsWith("Unknown session")
+        ? 404
+        : 500;
+    return new Response(
+      JSON.stringify(failure(message.id ?? null, -32000, errorMessage)),
+      { status, headers: { "content-type": "application/json" } },
+    );
+  }
+});
+
+app.delete(MCP_PATH, (c) => {
+  const sessionId = c.req.header(MCP_SESSION_HEADER);
+  if (!sessionId) {
+    return c.text("", 400);
+  }
+  if (!sessions.has(sessionId)) {
+    return c.text("", 404);
+  }
+  sessions.delete(sessionId);
+  return c.text("", 204);
+});
 
 const OPENAPI_SPEC = {
   openapi: "3.1.0",
