@@ -15,10 +15,9 @@ actually meaningful answer for your trouble of the day —
 
 the probability is non-negligible, since there are many answers in Suttapiṭaka.
 
-P.S. you can use it as a claude code skill:
+P.S. you can use it as a claude code plugin:
 
-```INSERT INSTRUCTIONS
-```
+`INSERT INSTRUCTIONS`
 
 sincerely yours,
 Dimq & Anton

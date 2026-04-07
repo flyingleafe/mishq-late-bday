@@ -11,7 +11,7 @@ import { marked } from "marked";
 const DB_URL = process.env.COCOINDEX_DATABASE_URL!;
 const DATA_DIR = join(process.cwd(), "data", "texts");
 const MODEL_NAME = process.env.EMBED_MODEL || "Xenova/all-MiniLM-L6-v2";
-const LLM_MODEL = "google/gemini-2.5-flash";
+const LLM_MODEL = "google/gemini-3.1-flash-lite-preview";
 const NUM_SUBQUERIES = 5;
 const CANDIDATES_PER_SUBQUERY = 30;
 
@@ -56,9 +56,9 @@ async function classifySystemQuery(query: string): Promise<SystemQueryType> {
 
   const prompt = `You are a classifier for a Buddhist sutta search engine. Given a user query, respond with exactly ONE word:
 
+- If the user is curious about what it is what he sees, or what the website is, or expresses confusion, or greets you, or writes a meta-message (e.g. "hi", "hello", "what is this", "who are you", "happy birthday", "what is this", "what is this thing", "wtf") → respond: BIRTHDAY
 - If the user asks how the system works, how it was made, what technology it uses, or anything similar (e.g. "how does this work", "how was this built", "what model do you use") → respond: HOW_IT_WORKS
-- If the user is curious about what the site is, or expresses confusion, or greets you, or writes a meta-message (e.g. "hi", "hello", "what is this", "who are you", "happy birthday", "what is this", "what is this thing") → respond: BIRTHDAY
-- If the query is a genuine search for Buddhist/dhamma content (even if poorly phrased) → respond: NO
+- If the query is a genuine search for Buddhist/dhamma content (even if poorly phrased), or just an expression of general feelings → respond: NO
 
 User query: "${query}"
 
@@ -87,7 +87,8 @@ Response (one word only):`;
     const content = data.choices?.[0]?.message?.content?.trim().toUpperCase() ?? "";
 
     if (content.includes("HOW_IT_WORKS")) return "how-it-works";
-    return "birthday";
+    if (content.includes("BIRTHDAY")) return "birthday";
+    return "other";
   } catch {
     return "birthday";
   }
@@ -415,7 +416,8 @@ app.get("/search", async (c) => {
   }
 
   const systemType = await classifySystemQuery(q);
-  if (systemType !== "birthday") {
+  console.log(`QUERY: ${q}, systemType: ${systemType}`);
+  if (systemType !== "other") {
     return c.json({
       query: q,
       top,
@@ -474,7 +476,8 @@ app.get("/stream", async (c) => {
   }
 
   const systemType = await classifySystemQuery(q);
-  if (systemType !== "birthday") {
+  console.log(`QUERY: ${q}, systemType: ${systemType}`);
+  if (systemType !== "other") {
     c.header("Content-Type", "text/event-stream");
     c.header("Cache-Control", "no-cache");
     c.header("Connection", "keep-alive");
